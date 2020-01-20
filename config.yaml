@@ -1,0 +1,11 @@
+# Folder IDs of projects that you want to scan for instances
+# waiting for signatures.  Note that this does _not_ scan 
+# recursively, you must explicitly list every project you'd
+# like to scan
+Folders:
+  - "123456789012"  # Production-1 Folder
+  - "234567890123"  # Production-2 Folder
+  - "345678901234"  # CA Testing Folder
+# Any one-off Project IDs that live in othes folders
+Projects:
+  - "test"
