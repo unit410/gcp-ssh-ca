@@ -56,9 +56,9 @@ PUBLIC_IP="1.2.3.4"
 PRIVATE_IP="2.3.4.5"
 CERT_ID="host-id"
 KEY_TO_SIGN="some_instances_key.pub"
-KEY_TO_SIGN="ca_key"
+CA_KEY="ca_key"
 ssh-keygen \
-    -s server_ca \
+    -s ${CA_KEY} \
     -I ${CERT_ID} \
     -h -n ${PUBLIC_IP},${PRIVATE_IP} \
     -V +4w \
