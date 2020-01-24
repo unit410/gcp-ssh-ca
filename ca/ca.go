@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -22,20 +23,24 @@ type CertificateAuthority struct {
 	signer          ssh.Signer
 	signInternalIPs bool
 	signExternalIPs bool
+	simulate        bool
 	parallelism     int
 	daysValid       time.Duration
 	projectIDs      []string
 	folderIDs       []string
-	rateLimiter     map[string]time.Time
+	// Rate limiting
+	rateLimiter      map[uint64]*time.Time
+	rateLimiterMutex *sync.RWMutex
 }
 
 // Create a new CA Signer
-func Create(configFile string, keyfile string, signInternalIPs bool, signExternalIPs bool, parallelism int, daysValid int) *CertificateAuthority {
+func Create(configFile string, keyfile string, signInternalIPs bool, signExternalIPs bool, parallelism int, simulate bool, daysValid int) *CertificateAuthority {
 	ca := CertificateAuthority{
 		signInternalIPs: signInternalIPs,
 		signExternalIPs: signExternalIPs,
 		signer:          loadCAKey(keyfile),
 		parallelism:     parallelism,
+		simulate:        simulate,
 		daysValid:       time.Duration(daysValid) * 24 * time.Hour,
 	}
 	// time.Duration
@@ -43,6 +48,8 @@ func Create(configFile string, keyfile string, signInternalIPs bool, signExterna
 	config := loadConfigFile(configFile)
 	ca.projectIDs = config.Projects
 	ca.folderIDs = config.Folders
+	ca.rateLimiter = map[uint64]*time.Time{}
+	ca.rateLimiterMutex = &sync.RWMutex{}
 
 	return &ca
 }
@@ -101,6 +108,12 @@ func (ca *CertificateAuthority) signKeysInProject(projectID string) {
 	// Search for GuestAttributes that want to be signed
 	for _, list := range aggregatedList.Items {
 		for _, instance := range list.Instances {
+			if ca.hasSignedMetadataInLastDay(instance.Id) {
+				debugln("  - Skipping instance because already signed in last 24 hours")
+				continue
+			}
+			log.Printf("Event=EvaluatingInstance Project=%v, Instance=%v\n", projectID, instance.Name)
+
 			zone := strings.Split(instance.Zone, "/")[8]
 			debugln("- Processing Instance: ", projectID, zone, instance.Name)
 
@@ -120,13 +133,13 @@ func (ca *CertificateAuthority) signKeysInProject(projectID string) {
 			for _, nic := range instance.NetworkInterfaces {
 				if ca.signExternalIPs {
 					for _, ac := range nic.AccessConfigs {
-						if isIPValid(ac.NatIP) {
+						if isValidIP(ac.NatIP) {
 							ips = append(ips, ac.NatIP)
 						}
 					}
 				}
-				if ca.signExternalIPs {
-					if isIPValid(nic.NetworkIP) {
+				if ca.signInternalIPs {
+					if isValidPrivateIP(nic.NetworkIP) {
 						ips = append(ips, nic.NetworkIP)
 					}
 				}
@@ -134,21 +147,26 @@ func (ca *CertificateAuthority) signKeysInProject(projectID string) {
 
 			// Validate & Sign the key
 			signedKey := signPubkey(ca.signer, sshKey, ips, ca.daysValid)
-			log.Printf("Signed Key for Project=%v, Instance=%v, IPs=%v\n", projectID, instance.Name, ips)
+			log.Printf("Event=SignedKey for Project=%v, Instance=%v, IPs=%v\n", projectID, instance.Name, ips)
 
 			// Inject into metadata
-			debugln("  - Setting Metadata")
-			addSignatureToMetadata(instance.Metadata, signedKey)
-			setMetaCall := computeService.Instances.SetMetadata(
-				projectID,
-				zone,
-				instance.Name,
-				instance.Metadata)
-			if _, err = setMetaCall.Do(); err != nil {
-				log.Println("[signKeysInProject]", err)
-				return
+			if ca.simulate {
+				debugln("  - Would have set metadata, but in simulate mode")
+			} else {
+				debugln("  - Setting Metadata")
+				addSignatureToMetadata(instance.Metadata, signedKey)
+				setMetaCall := computeService.Instances.SetMetadata(
+					projectID,
+					zone,
+					instance.Name,
+					instance.Metadata)
+				if _, err = setMetaCall.Do(); err != nil {
+					log.Println("[signKeysInProject]", err)
+					return
+				}
+				log.Printf("Event=SetMetadata Project=%v, Instance=%v, IPs=%v\n", projectID, instance.Name, ips)
+				ca.recordSigningMetadata(instance.Id)
 			}
-			debugln("  - Metadata Set")
 		}
 	}
 
@@ -172,14 +190,26 @@ func addSignatureToMetadata(metadata *compute.Metadata, signedKey string) {
 	metadata.Items = append(metadata.Items, &item)
 }
 
-// isIPValid according to IPv4
-func isIPValid(ipAddress string) bool {
+// isValidIP according to IPv4
+func isValidIP(ipAddress string) bool {
 	ip := net.ParseIP(ipAddress)
 	if ip.To4() == nil {
 		log.Printf("[WARN] %v is not a valid IPv4 Address\n", ipAddress)
 		return false
 	}
 	return true
+}
+
+// isIPValidPrivateIP as defined in https://tools.ietf.org/html/rfc1918
+func isValidPrivateIP(ipAddress string) bool {
+	ip := net.ParseIP(ipAddress).To4()
+	if ip == nil {
+		log.Printf("[WARN] %v is not a valid IPv4 Address\n", ipAddress)
+		return false
+	}
+	return ip[0] == 10 ||
+		(ip[0] == 172 && ip[1]&0xf0 == 16) ||
+		(ip[0] == 192 && ip[1] == 168)
 }
 
 // makeSliceUnique with no duplicated elements.

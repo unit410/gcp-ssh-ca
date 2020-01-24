@@ -16,6 +16,7 @@ var (
 	signInternalIPs = flag.Bool("sign-internal-ips", true, "Sign the internal IPs of instances")
 	signExternalIPs = flag.Bool("sign-external-ips", true, "Sign the external IPs of instances")
 	parallelism     = flag.Int("parallelism", 3, "Max number of simultaneous GCP Signers to run.")
+	simulate        = flag.Bool("simulate", false, "Don't inject any signatures, just simulate a run")
 	validity        = flag.Int("validity", 365, "Number of days that this cert signature is valid.")
 )
 
@@ -26,7 +27,7 @@ func main() {
 	ca.DebugEnabled = *debug
 
 	// Run loop
-	certAuthority := ca.Create(*configFile, *caKeyFile, *signInternalIPs, *signExternalIPs, *parallelism, *validity)
+	certAuthority := ca.Create(*configFile, *caKeyFile, *signInternalIPs, *signExternalIPs, *parallelism, *simulate, *validity)
 	for {
 		certAuthority.SignKeys()
 		log.Println("Ran successfully")
