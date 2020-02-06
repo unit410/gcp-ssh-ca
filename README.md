@@ -106,3 +106,4 @@ $ ...
 * Your CA now becomes a central point of trust.  If this key is ever stolen, any SSH pubkeys can be signed, but users need to be tricked to SSH'ing into those machines.
 * By default, these certs are only valid for 365 days.  If your VMs _must_ live for longer than this, you'll need something to rotate the signed pubkeys.
 * Bad guys with access to edit instance metadgata could inject an arbitrary payloadinto an instances metadata, but altering a public key would not match the instance's _private key_ which would break the initial SSH handshake.
+
