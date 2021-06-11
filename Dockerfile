@@ -1,4 +1,4 @@
-from golang:1.13
+from golang:1.15.12
 
 WORKDIR /go/src/app
 
