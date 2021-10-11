@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"gitlab.com/polychainlabs/gcp-ssh-ca/ca"
+	"gitlab.com/unit410/gcp-ssh-ca/ca"
 )
 
 var (

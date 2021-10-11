@@ -1,0 +1,14 @@
+image: golang:1.17.2-alpine
+
+variables:
+  GIT_DEPTH: "1"
+
+before_script:
+  - apk add make gcc musl-dev git
+
+stages:
+  - test
+
+test:
+  stage: test
+  script: cd "$CI_PROJECT_DIR" && make test
