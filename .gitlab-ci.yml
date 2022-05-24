@@ -1,4 +1,4 @@
-image: golang:1.17.2-alpine
+image: golang:1.17.10-alpine
 
 variables:
   GIT_DEPTH: "1"
